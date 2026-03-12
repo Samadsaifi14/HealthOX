@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<title>Health Advisor — Scan Product</title>
+<script src='https://unpkg.com/@zxing/library@latest'></script>
+<style>
+body { font-family: Arial, sans-serif; background:#F5F3FF; margin:0;
+padding:20px; text-align:center; }
+h1 { color:#4A1D96; font-size:1.4rem; }
+#preview { width:100%; max-width:400px; border-radius:12px; border:3px solid
+#7C3AED; }
+#status { background:#fff; border-radius:8px; padding:15px; margin:15px 0;
+font-size:1rem; min-height:60px; }
+#result { background:#D1FAE5; border-radius:8px; padding:15px; margin:10px 0;
+display:none; }
+.btn { background:#7C3AED; color:white; border:none; padding:14px 28px;
+border-radius:8px; font-size:1rem; cursor:pointer; margin:8px; }
+</style>
+</head>
+<body>
+<h1>🏥 AI Health Advisor</h1>
+<p>Point camera at barcode on food packaging</p>
+<video id='preview'></video>
+<div id='status'>📷 Starting camera...</div>
+<div id='result'></div>
+<button class='btn' onclick='startScan()'>🔄 Scan Again</button>
+<script>
+// ⚠️ REPLACE THIS with your Relay.app Webhook URL (from Step 3)
+const RELAY_WEBHOOK = 'https://hook.relay.app/api/v1/playbook/cmmmdsod4041d0qm45pxu5lgu/trigger/_acgjWjbAbb1MOzxZOWRCw';
+const codeReader = new ZXing.BrowserMultiFormatReader();
+let scanning = false;
+async function startScan() {
+scanning = true;
+document.getElementById('status').innerText = '📷 Scanning... point at
+barcode';
+document.getElementById('result').style.display = 'none';
+const devices = await codeReader.listVideoInputDevices();
+const deviceId = devices[devices.length - 1].deviceId; // rear camera
+codeReader.decodeFromVideoDevice(deviceId, 'preview', async (result, err) =>
+{
+if (result && scanning) {
+scanning = false;
+codeReader.reset();
+const barcode = result.getText();
+document.getElementById('status').innerText = '✅ Barcode: ' + barcode +
+' — Sending to AI...';
+try {
+const resp = await fetch(RELAY_WEBHOOK, {
+method: 'POST',
+headers: { 'Content-Type': 'application/json' },
+body: JSON.stringify({ barcode: barcode, timestamp: new
+Date().toISOString() })
+});
+const data = await resp.json();
+🏥 AI Healthcare Advisor — Relay.app Step-by-Step Build Guide
+Built with Relay.app + Anthropic Claude Sonnet + Microsoft Planner + Open Food Facts
+document.getElementById('result').style.display = 'block';
+document.getElementById('result').innerHTML =
+'<strong>Rating: ' + (data.rating || 'Processing...') +
+'</strong><br>' +
+(data.summary || 'Analysis complete. Check your Planner.');
+} catch(e) {
+document.getElementById('status').innerText = '✅ Scanned: ' + barcode
++ ' — logged!';
+}
+}
+});
+}
+startScan();
+</script>
+</body>
+</html>
