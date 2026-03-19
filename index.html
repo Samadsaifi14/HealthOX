@@ -1,0 +1,2220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#00d4aa" />
+  <meta name="description" content="Scan food barcodes for instant AI health ratings" />
+
+  <!--
+    CSP notes:
+    - This app is a single-file HTML with inline CSS/JS, so 'unsafe-inline' is required.
+    - External connects are limited to Open Food Facts + fonts + CDN libs.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    base-uri 'self';
+    object-src 'none';
+    frame-ancestors 'none';
+    form-action 'self';
+    img-src 'self' data: https: http:;
+    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+    font-src https://fonts.gstatic.com data:;
+    script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net;
+    connect-src 'self' https://world.openfoodfacts.org https://fonts.googleapis.com https://fonts.gstatic.com;
+    media-src 'self' blob: data:;
+    worker-src 'self';
+  " />
+
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <title>HealthOX</title>
+
+  <style>
+    :root {
+      --bg: #0a0e1a;
+      --surface: #111827;
+      --surface2: #1a2235;
+      --border: #1e2d45;
+      --accent: #00d4aa;
+      --accent2: #6366f1;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --radius: 14px;
+      --font: 'Sora', -apple-system, system-ui, sans-serif;
+      --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      --shadow: 0 18px 40px rgba(0,0,0,.45);
+      --ease: 200ms ease;
+      --maxw: 430px;
+      --safe-b: env(safe-area-inset-bottom, 0px);
+      --safe-t: env(safe-area-inset-top, 0px);
+      --safe-l: env(safe-area-inset-left, 0px);
+      --safe-r: env(safe-area-inset-right, 0px);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: radial-gradient(1200px 900px at 20% -10%, rgba(99,102,241,.22), transparent 55%),
+                  radial-gradient(1000px 700px at 90% 10%, rgba(0,212,170,.18), transparent 55%),
+                  var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    a { color: inherit; text-decoration: none; }
+    button, input, textarea { font-family: inherit; }
+
+    .app {
+      max-width: var(--maxw);
+      margin: 0 auto;
+      min-height: 100%;
+      padding: calc(14px + var(--safe-t)) calc(14px + var(--safe-r)) calc(84px + var(--safe-b)) calc(14px + var(--safe-l));
+      position: relative;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .brand .logo {
+      width: 36px; height: 36px;
+      border-radius: 12px;
+      display: grid; place-items: center;
+      background: linear-gradient(135deg, rgba(0,212,170,.22), rgba(99,102,241,.18));
+      border: 1px solid rgba(30,45,69,.9);
+      box-shadow: 0 12px 25px rgba(0,0,0,.32);
+      flex: 0 0 auto;
+    }
+    .brand .title {
+      min-width: 0;
+      line-height: 1.05;
+    }
+    .brand .title b { display:block; font-weight: 700; letter-spacing: .2px; }
+    .brand .title span { display:block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(17,24,39,.7);
+      border: 1px solid rgba(30,45,69,.9);
+      font-size: 12px;
+      color: var(--muted);
+      user-select: none;
+    }
+    .mono { font-family: var(--mono); }
+
+    .card {
+      background: linear-gradient(180deg, rgba(17,24,39,.88), rgba(17,24,39,.72));
+      border: 1px solid rgba(30,45,69,.95);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .card.pad { padding: 14px; }
+    .card + .card { margin-top: 12px; }
+
+    .row { display:flex; align-items:center; justify-content:space-between; gap: 10px; }
+    .col { display:flex; flex-direction:column; gap: 10px; }
+
+    .btn {
+      appearance: none;
+      border: 1px solid rgba(30,45,69,.95);
+      background: rgba(26,34,53,.7);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform var(--ease), background var(--ease), border-color var(--ease), opacity var(--ease);
+    }
+    .btn:hover { transform: translateY(-1px); background: rgba(26,34,53,.88); }
+    .btn:active { transform: translateY(0px) scale(.99); }
+    .btn.primary {
+      background: linear-gradient(135deg, rgba(0,212,170,.25), rgba(0,212,170,.12));
+      border-color: rgba(0,212,170,.35);
+    }
+    .btn.danger {
+      background: linear-gradient(135deg, rgba(239,68,68,.22), rgba(239,68,68,.12));
+      border-color: rgba(239,68,68,.35);
+    }
+    .btn.ghost {
+      background: transparent;
+    }
+    .btn:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+
+    .input, .textarea {
+      width: 100%;
+      background: rgba(26,34,53,.55);
+      border: 1px solid rgba(30,45,69,.95);
+      color: var(--text);
+      padding: 11px 12px;
+      border-radius: 12px;
+      outline: none;
+      transition: border-color var(--ease), background var(--ease);
+    }
+    .input:focus, .textarea:focus { border-color: rgba(0,212,170,.45); background: rgba(26,34,53,.7); }
+    .textarea { min-height: 76px; resize: vertical; }
+    .hint { font-size: 12px; color: var(--muted); line-height: 1.35; }
+
+    .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+
+    .screen { display: none; }
+    .screen.active { display:block; }
+
+    .nav {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 10px;
+      bottom: calc(10px + var(--safe-b));
+      width: min(var(--maxw), calc(100% - 22px));
+      border-radius: 16px;
+      border: 1px solid rgba(30,45,69,.95);
+      background: rgba(10,14,26,.78);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 18px 50px rgba(0,0,0,.55);
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      overflow: hidden;
+      z-index: 20;
+    }
+    .nav button {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      padding: 12px 10px;
+      color: var(--muted);
+      font-weight: 700;
+      cursor: pointer;
+      transition: background var(--ease), color var(--ease);
+    }
+    .nav button.active { color: var(--text); background: rgba(26,34,53,.55); }
+    .nav button span { display:block; font-size: 11px; font-weight: 700; letter-spacing: .2px; margin-top: 4px; }
+    .nav .ico { font-size: 18px; line-height: 1; }
+
+    .cameraWrap {
+      position: relative;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid rgba(30,45,69,.95);
+      background: rgba(26,34,53,.5);
+      aspect-ratio: 3 / 4;
+      box-shadow: 0 18px 45px rgba(0,0,0,.5);
+    }
+    video#video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: none;
+    }
+    .scanOverlay {
+      position:absolute;
+      inset: 0;
+      pointer-events: none;
+      display:block;
+    }
+    .scanOverlay::before {
+      content:"";
+      position:absolute;
+      inset: 18%;
+      border-radius: 18px;
+      border: 2px solid rgba(226,232,240,.18);
+      box-shadow: inset 0 0 0 1px rgba(0,212,170,.10);
+    }
+    .corner {
+      position:absolute; width: 22px; height: 22px; border: 3px solid rgba(0,212,170,.75);
+      border-bottom: 0; border-right: 0;
+      filter: drop-shadow(0 10px 18px rgba(0,0,0,.35));
+    }
+    .corner.tr { top: calc(18% - 2px); right: calc(18% - 2px); transform: rotate(90deg); }
+    .corner.br { bottom: calc(18% - 2px); right: calc(18% - 2px); transform: rotate(180deg); }
+    .corner.bl { bottom: calc(18% - 2px); left: calc(18% - 2px); transform: rotate(270deg); }
+    .corner.tl { top: calc(18% - 2px); left: calc(18% - 2px); }
+
+    .scanLine {
+      position: absolute;
+      left: 18%;
+      right: 18%;
+      height: 2px;
+      top: 22%;
+      background: linear-gradient(90deg, transparent, rgba(0,212,170,.95), transparent);
+      box-shadow: 0 0 14px rgba(0,212,170,.35);
+      animation: scanline 1.6s ease-in-out infinite;
+    }
+    @keyframes scanline {
+      0% { transform: translateY(0); opacity: .75; }
+      50% { transform: translateY(210px); opacity: 1; }
+      100% { transform: translateY(0); opacity: .75; }
+    }
+
+    .status {
+      margin-top: 10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .status strong { color: var(--text); }
+
+    .skeleton {
+      background: linear-gradient(90deg, rgba(26,34,53,.45), rgba(26,34,53,.75), rgba(26,34,53,.45));
+      background-size: 200% 100%;
+      animation: shimmer 1.2s ease-in-out infinite;
+      border-radius: 10px;
+    }
+    @keyframes shimmer { 0% { background-position: 0% 0; } 100% { background-position: -200% 0; } }
+
+    .resultHead {
+      display:flex; gap: 12px; align-items:center;
+    }
+    .thumb {
+      width: 64px; height: 64px; border-radius: 14px; overflow:hidden;
+      border: 1px solid rgba(30,45,69,.95);
+      background: rgba(26,34,53,.55);
+      flex: 0 0 auto;
+    }
+    .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+
+    .badge {
+      display:inline-flex; align-items:center; gap: 8px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: 12px;
+      letter-spacing: .2px;
+      border: 1px solid rgba(30,45,69,.95);
+      background: rgba(26,34,53,.55);
+      user-select: none;
+    }
+    .badge.healthy { border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.10); color: #a7f3d0; }
+    .badge.mod { border-color: rgba(245,158,11,.35); background: rgba(245,158,11,.12); color: #fde68a; }
+    .badge.unhealthy { border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.12); color: #fecaca; }
+
+    .pills { display:flex; flex-wrap:wrap; gap: 8px; }
+    .pillTag {
+      display:inline-flex; align-items:center; gap: 8px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(30,45,69,.95);
+      background: rgba(26,34,53,.55);
+      font-size: 12px;
+      color: var(--text);
+    }
+    .sevLow { border-color: rgba(34,197,94,.32); background: rgba(34,197,94,.10); }
+    .sevMed { border-color: rgba(245,158,11,.32); background: rgba(245,158,11,.12); }
+    .sevHigh { border-color: rgba(239,68,68,.32); background: rgba(239,68,68,.12); }
+    .good { border-color: rgba(34,197,94,.32); background: rgba(34,197,94,.10); color: #bbf7d0; }
+
+    .divider { height: 1px; background: rgba(30,45,69,.9); margin: 12px 0; }
+
+    .gaugeWrap {
+      display:flex; align-items:center; gap: 12px;
+    }
+    .gauge {
+      width: 74px; height: 74px;
+      position: relative;
+      flex: 0 0 auto;
+    }
+    .gauge svg { width:100%; height:100%; display:block; transform: rotate(-90deg); }
+    .gauge .center {
+      position:absolute; inset: 0;
+      display:grid; place-items:center;
+      text-align:center;
+    }
+    .gauge .center b { font-size: 16px; }
+    .gauge .center span { font-size: 11px; color: var(--muted); margin-top: -2px; display:block; }
+
+    .serving {
+      display:flex; flex-direction:column; gap: 10px;
+      background: rgba(26,34,53,.48);
+      border: 1px solid rgba(30,45,69,.95);
+      border-radius: 14px;
+      padding: 12px;
+    }
+    input[type="range"] { width: 100%; }
+    .rangeRow { display:flex; align-items:center; justify-content:space-between; gap: 10px; }
+    .rangeRow .val { font-family: var(--mono); color: var(--text); font-size: 12px; }
+
+    .list { display:flex; flex-direction:column; gap: 10px; }
+    .item {
+      display:flex; gap: 12px; align-items:center;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(30,45,69,.95);
+      background: rgba(26,34,53,.45);
+    }
+    .item .meta { min-width: 0; flex: 1 1 auto; }
+    .item .meta b { display:block; font-size: 14px; }
+    .item .meta span { display:block; font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .item .right { display:flex; flex-direction:column; align-items:flex-end; gap: 6px; }
+    .small { font-size: 12px; color: var(--muted); }
+
+    .chart {
+      height: 120px;
+      display:flex;
+      gap: 10px;
+      align-items:flex-end;
+      padding-top: 6px;
+    }
+    .barWrap {
+      flex: 1 1 0;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .bar {
+      width: 100%;
+      border-radius: 10px;
+      background: rgba(30,45,69,.65);
+      border: 1px solid rgba(30,45,69,.95);
+      overflow: hidden;
+      height: 92px;
+      display:flex;
+      align-items:flex-end;
+    }
+    .bar > i {
+      display:block;
+      width:100%;
+      height: 0%;
+      border-radius: 10px;
+      background: rgba(34,197,94,.35);
+      transition: height var(--ease), background var(--ease);
+    }
+    .barWrap label { font-size: 11px; color: var(--muted); }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: calc(84px + var(--safe-b));
+      width: min(var(--maxw), calc(100% - 22px));
+      z-index: 50;
+      pointer-events: none;
+      display:flex;
+      flex-direction:column;
+      gap: 10px;
+    }
+    .toast .t {
+      pointer-events: auto;
+      padding: 12px 12px;
+      border-radius: 14px;
+      background: rgba(17,24,39,.92);
+      border: 1px solid rgba(30,45,69,.95);
+      box-shadow: 0 18px 50px rgba(0,0,0,.5);
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap: 12px;
+      animation: in .18s ease-out;
+    }
+    @keyframes in { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    .kcalRing {
+      display:flex; gap: 12px; align-items:center;
+      cursor: pointer;
+      user-select:none;
+    }
+    .kcalRing .txt b { display:block; font-size: 14px; }
+    .kcalRing .txt span { display:block; font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+    .mutedBox {
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px dashed rgba(30,45,69,.95);
+      background: rgba(26,34,53,.30);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .toggleRow { display:flex; align-items:center; justify-content:space-between; gap: 10px; padding: 10px 0; }
+    .switch {
+      position: relative; width: 46px; height: 28px; flex: 0 0 auto;
+      border-radius: 999px;
+      background: rgba(30,45,69,.85);
+      border: 1px solid rgba(30,45,69,.95);
+      cursor: pointer;
+      transition: background var(--ease);
+    }
+    .switch i {
+      position:absolute; top: 3px; left: 3px;
+      width: 22px; height: 22px; border-radius: 999px;
+      background: rgba(226,232,240,.92);
+      transition: transform var(--ease), background var(--ease);
+    }
+    .switch.on { background: rgba(0,212,170,.25); border-color: rgba(0,212,170,.35); }
+    .switch.on i { transform: translateX(18px); background: rgba(0,212,170,.9); }
+
+    .kbd {
+      display:inline-flex;
+      padding: 2px 6px;
+      border-radius: 8px;
+      border: 1px solid rgba(30,45,69,.95);
+      background: rgba(26,34,53,.55);
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">🏥</div>
+        <div class="title">
+          <b>HealthOX</b>
+          <span id="subtitle">Scan barcodes for instant health guidance</span>
+        </div>
+      </div>
+      <div class="pill mono" id="netPill">● online</div>
+    </div>
+
+    <!-- ONBOARDING -->
+    <section class="screen" id="screen-onboarding" aria-label="Onboarding">
+      <div class="card pad">
+        <div class="row" style="align-items:flex-start;">
+          <div class="col" style="gap:6px;">
+            <div style="font-weight:800; font-size:16px;">Welcome</div>
+            <div class="hint">Set up your profile once. Everything stays on this device. We'll suggest a daily calorie goal based on your details.</div>
+          </div>
+          <div class="pill">First launch</div>
+        </div>
+        <div class="divider"></div>
+
+        <div class="grid2">
+          <div>
+            <div class="label">Name</div>
+            <input class="input" id="ob-name" placeholder="e.g. Sam" autocomplete="name" />
+          </div>
+          <div>
+            <div class="label">Daily Calorie Goal (suggested)</div>
+            <input class="input mono" id="ob-goal" type="number" inputmode="numeric" min="800" max="6000" step="10" placeholder="Calculated…" />
+          </div>
+        </div>
+
+        <div class="card pad" style="margin-top:12px; background: rgba(26,34,53,.40); box-shadow:none;">
+          <div style="font-weight:900; margin-bottom:6px;">Calorie goal calculator</div>
+          <div class="grid2">
+            <div>
+              <div class="label">Age</div>
+              <input class="input mono" id="ob-age" type="number" inputmode="numeric" min="10" max="120" placeholder="Years" />
+            </div>
+            <div>
+              <div class="label">Gender</div>
+              <select class="input" id="ob-gender">
+                <option value="">Select…</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+            </div>
+            <div>
+              <div class="label">Height</div>
+              <input class="input mono" id="ob-height" type="number" inputmode="numeric" min="90" max="230" placeholder="cm" />
+            </div>
+            <div>
+              <div class="label">Weight</div>
+              <input class="input mono" id="ob-weight" type="number" inputmode="decimal" min="25" max="250" placeholder="kg" />
+            </div>
+          </div>
+          <div style="margin-top:10px;">
+            <div class="label">Activity level</div>
+            <select class="input" id="ob-activity">
+              <option value="">Select…</option>
+              <option value="1.2">Sedentary (little or no exercise)</option>
+              <option value="1.375">Light (1–3 days/week)</option>
+              <option value="1.55">Moderate (3–5 days/week)</option>
+              <option value="1.725">Very active (6–7 days/week)</option>
+              <option value="1.9">Athlete (2x/day)</option>
+            </select>
+            <div class="hint" style="margin-top:6px;">We estimate maintenance calories (TDEE). You can edit the goal field above.</div>
+          </div>
+        </div>
+
+        <div style="margin-top:10px;">
+          <div class="label">Allergies / Conditions (optional)</div>
+          <textarea class="textarea" id="ob-allergies" placeholder="e.g. Peanut allergy, celiac, hypertension..."></textarea>
+          <div class="hint" style="margin-top:6px;">
+            Helps HealthOX tailor on-device tips and warnings. Examples: <b>hypertension</b> → sodium-focused tips; <b>diabetes risk</b> → sugar/carb pattern tips; <b>peanut allergy</b> → allergen warnings.
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <div class="row">
+          <button class="btn" id="ob-ask-notif">Enable Alerts</button>
+          <button class="btn primary" id="ob-save">Finish Setup</button>
+        </div>
+        <div class="hint" id="ob-msg" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="card pad" style="margin-top:12px;">
+        <div style="font-weight:800; margin-bottom:6px;">Privacy</div>
+        <div class="hint">
+          - No accounts, no server storage.<br>
+          - Scan history + logs are stored in IndexedDB on this device.<br>
+          - Offline works for previously scanned products.
+        </div>
+      </div>
+    </section>
+
+    <!-- SCAN -->
+    <section class="screen" id="screen-scan" aria-label="Scan">
+      <div class="cameraWrap">
+        <video id="video" playsinline muted></video>
+        <div class="scanOverlay" aria-hidden="true">
+          <div class="corner tl"></div>
+          <div class="corner tr"></div>
+          <div class="corner br"></div>
+          <div class="corner bl"></div>
+          <div class="scanLine"></div>
+        </div>
+      </div>
+      <div class="status">
+        <div id="scanStatus">Point at a barcode…</div>
+        <div class="row" style="gap:8px;">
+          <button class="btn" id="btnStartScan">Start</button>
+          <button class="btn ghost" id="btnStopScan">Stop</button>
+        </div>
+      </div>
+
+      <div class="card pad" id="resultCard" style="display:none; margin-top:12px;"></div>
+
+      <div class="row" style="margin-top:12px;">
+        <button class="btn" id="btnHistory">Scan History</button>
+        <button class="btn" id="btnSettingsFromScan">Settings</button>
+      </div>
+
+      <div class="card pad" id="offlineHint" style="display:none; margin-top:12px;">
+        <b>You're offline.</b>
+        <div class="hint" style="margin-top:6px;">Previously scanned products still work from your history.</div>
+      </div>
+    </section>
+
+    <!-- LOG -->
+    <section class="screen" id="screen-log" aria-label="Today's Log">
+      <div class="card pad">
+        <div class="row">
+          <div>
+            <div style="font-weight:800; font-size:16px;">Today</div>
+            <div class="hint" id="logDateHint"></div>
+          </div>
+          <div class="pill mono" id="logTotalPill">0 / 2000</div>
+        </div>
+        <div class="divider"></div>
+        <div id="logList" class="list"></div>
+        <div id="logEmpty" class="mutedBox" style="display:none;">No meals logged today yet. Scan a product and tap <b>Log This Meal</b>.</div>
+      </div>
+
+      <div class="card pad">
+        <div class="row">
+          <div style="font-weight:800;">Last 7 days</div>
+          <div class="hint">Tap a bar to view that day</div>
+        </div>
+        <div class="chart" id="weekChart"></div>
+      </div>
+
+      <div class="card pad" id="insightsCard">
+        <div class="row">
+          <div style="font-weight:800;">Health Supervisor</div>
+          <button class="btn ghost" id="btnRefreshInsights" style="padding:8px 10px;">Refresh</button>
+        </div>
+        <div class="divider"></div>
+        <div id="insightsBody" class="col" style="gap:10px;"></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="screen" id="screen-settings" aria-label="Settings">
+      <div class="card pad">
+        <div class="row">
+          <div style="font-weight:800; font-size:16px;">Settings</div>
+          <div class="pill">v1.0</div>
+        </div>
+        <div class="divider"></div>
+
+        <div class="grid2">
+          <div>
+            <div class="label">Name</div>
+            <input class="input" id="st-name" placeholder="Your name" />
+          </div>
+          <div>
+            <div class="label">Daily Goal (kcal)</div>
+            <input class="input mono" id="st-goal" type="number" inputmode="numeric" min="800" max="6000" step="10" />
+          </div>
+        </div>
+
+        <div style="margin-top:10px;">
+          <div class="label">Allergies / Conditions</div>
+          <textarea class="textarea" id="st-allergies" placeholder="Optional"></textarea>
+          <div class="hint" style="margin-top:6px;">
+            Used only on this device to tailor tips/warnings. Examples: hypertension → sodium tips; diabetes risk → sugar/carb tips; peanut allergy → allergen warnings.
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <div class="toggleRow">
+          <div>
+            <b>Calorie alerts</b>
+            <div class="hint">Notify when you're close to your daily limit.</div>
+          </div>
+          <div class="switch" id="st-alerts"><i></i></div>
+        </div>
+
+        <div class="grid2">
+          <div>
+            <div class="label">Alert threshold (kcal remaining)</div>
+            <input class="input mono" id="st-threshold" type="number" inputmode="numeric" min="50" max="1000" step="10" />
+          </div>
+          <div>
+            <div class="label">Daily reminder time</div>
+            <input class="input mono" id="st-reminder" type="time" />
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <div class="row" style="gap:10px; flex-wrap:wrap;">
+          <button class="btn" id="btnSaveSettings">Save</button>
+          <button class="btn" id="btnAskNotif">Notification Permission</button>
+          <button class="btn" id="btnExport">Export my data (JSON)</button>
+          <button class="btn danger" id="btnClearAll">Clear all data</button>
+        </div>
+      </div>
+
+      <div class="card pad">
+        <div style="font-weight:800; margin-bottom:6px;">About</div>
+        <div class="hint">
+          Uses the Open Food Facts database (3M+ products).<br>
+          Ratings are computed on-device from nutrition facts + ingredients.<br>
+          Tip: This app works best as an installed PWA (Add to Home Screen).
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="nav" role="navigation" aria-label="Bottom navigation">
+    <button id="tabScan" class="active" aria-label="Scan tab"><div class="ico">📷</div><span>Scan</span></button>
+    <button id="tabLog" aria-label="Log tab"><div class="ico">📊</div><span>Log</span></button>
+    <button id="tabSettings" aria-label="Settings tab"><div class="ico">⚙️</div><span>Settings</span></button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- Libraries -->
+  <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/idb@8/build/umd.js"></script>
+
+  <script>
+    // ---------------------------
+    // Constants + helpers
+    // ---------------------------
+    const APP = {
+      dbName: "HealthOXDB",
+      cacheName: "health-advisor-v1",
+      lsPrefix: "hox_",
+      version: "1.0.0",
+      offEndpoint: (barcode) => `https://world.openfoodfacts.org/api/v3/product/${encodeURIComponent(barcode)}.json`,
+      svgIconDataUrl: (() => {
+        const svg = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+            <defs>
+              <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+                <stop offset="0" stop-color="#00d4aa" stop-opacity="0.95"/>
+                <stop offset="1" stop-color="#6366f1" stop-opacity="0.85"/>
+              </linearGradient>
+              <filter id="s" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000" flood-opacity="0.45"/>
+              </filter>
+            </defs>
+            <rect x="14" y="14" width="164" height="164" rx="42" fill="#0a0e1a"/>
+            <rect x="18" y="18" width="156" height="156" rx="38" fill="url(#g)" opacity="0.18"/>
+            <g filter="url(#s)">
+              <rect x="46" y="50" width="100" height="92" rx="22" fill="#111827" stroke="#1e2d45" stroke-width="4"/>
+              <path d="M96 62c16 0 26 11 26 26 0 10-5 18-14 24l-12 8-12-8c-9-6-14-14-14-24 0-15 10-26 26-26z" fill="#00d4aa" opacity="0.35"/>
+              <path d="M96 74c-8 0-14 6-14 14 0 6 3 10 9 14l5 4 5-4c6-4 9-8 9-14 0-8-6-14-14-14z" fill="#00d4aa" opacity="0.7"/>
+              <rect x="88" y="80" width="16" height="44" rx="8" fill="#e2e8f0" opacity="0.9"/>
+              <rect x="74" y="94" width="44" height="16" rx="8" fill="#e2e8f0" opacity="0.9"/>
+            </g>
+          </svg>
+        `.trim();
+        return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+      })()
+    };
+
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+    function todayStr(d = new Date()) {
+      const yr = d.getFullYear();
+      const mo = String(d.getMonth() + 1).padStart(2, "0");
+      const da = String(d.getDate()).padStart(2, "0");
+      return `${yr}-${mo}-${da}`;
+    }
+
+    function timeStr(ts) {
+      const d = new Date(ts);
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+
+    function toast(msg, kind = "info", ttl = 3200) {
+      const host = $("#toast");
+      const el = document.createElement("div");
+      el.className = "t";
+      el.innerHTML = `<div><b style="text-transform:capitalize;">${escapeHtml(kind)}</b><div class="hint" style="margin-top:4px;">${escapeHtml(msg)}</div></div>
+                      <button class="btn ghost" style="padding:8px 10px;">OK</button>`;
+      const btn = el.querySelector("button");
+      btn.addEventListener("click", () => el.remove());
+      host.appendChild(el);
+      setTimeout(() => { if (el.isConnected) el.remove(); }, ttl);
+    }
+
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+    }
+
+    function setNetPill() {
+      const online = navigator.onLine;
+      const pill = $("#netPill");
+      pill.textContent = online ? "● online" : "● offline";
+      pill.style.color = online ? "var(--success)" : "var(--warning)";
+      $("#offlineHint").style.display = online ? "none" : "block";
+    }
+
+    // ---------------------------
+    // Storage: local settings + IndexedDB
+    // ---------------------------
+    function lsGet(key, fallback = null) {
+      const v = localStorage.getItem(APP.lsPrefix + key);
+      return v === null ? fallback : v;
+    }
+    function lsSet(key, val) { localStorage.setItem(APP.lsPrefix + key, String(val)); }
+    function lsDel(key) { localStorage.removeItem(APP.lsPrefix + key); }
+
+    function getUserName() { return lsGet("name", ""); }
+    function getDailyGoal() {
+      const raw = Number(lsGet("goal", ""));
+      if (Number.isFinite(raw) && raw > 0) return raw;
+      return 0;
+    }
+    function getAllergies() { return lsGet("allergies", ""); }
+    function getAlertsEnabled() { return lsGet("alerts_enabled", "1") === "1"; }
+    function getAlertThreshold() {
+      const raw = Number(lsGet("alerts_threshold", "300"));
+      return Number.isFinite(raw) ? clamp(raw, 50, 1000) : 300;
+    }
+    function getReminderTime() { return lsGet("reminder_time", "12:00"); }
+    function isOnboarded() { return lsGet("onboarded", "0") === "1"; }
+
+    function getProfile() {
+      return {
+        age: Number(lsGet("age", "")) || null,
+        gender: lsGet("gender", "") || "",
+        heightCm: Number(lsGet("height_cm", "")) || null,
+        weightKg: Number(lsGet("weight_kg", "")) || null,
+        activity: Number(lsGet("activity", "")) || null
+      };
+    }
+
+    let dbPromise = null;
+    function getDB() {
+      if (dbPromise) return dbPromise;
+      dbPromise = idb.openDB(APP.dbName, 1, {
+        upgrade(db) {
+          if (!db.objectStoreNames.contains("scans")) {
+            const scans = db.createObjectStore("scans", { keyPath: "id" });
+            scans.createIndex("by_barcode", "barcode", { unique: true });
+            scans.createIndex("by_ts", "timestamp");
+          }
+          if (!db.objectStoreNames.contains("logs")) {
+            const logs = db.createObjectStore("logs", { keyPath: "id" });
+            logs.createIndex("by_date", "date");
+            logs.createIndex("by_ts", "timestamp");
+          }
+          if (!db.objectStoreNames.contains("settings")) {
+            db.createObjectStore("settings", { keyPath: "key" });
+          }
+        }
+      });
+      return dbPromise;
+    }
+
+    async function upsertScan(scan) {
+      const db = await getDB();
+      await db.put("scans", scan);
+    }
+    async function getScanByBarcode(barcode) {
+      const db = await getDB();
+      return await db.getFromIndex("scans", "by_barcode", barcode);
+    }
+    async function listScans(limit = 200) {
+      const db = await getDB();
+      const tx = db.transaction("scans", "readonly");
+      const idx = tx.store.index("by_ts");
+      const out = [];
+      let cursor = await idx.openCursor(null, "prev");
+      while (cursor && out.length < limit) {
+        out.push(cursor.value);
+        cursor = await cursor.continue();
+      }
+      await tx.done;
+      return out;
+    }
+    async function clearScans() {
+      const db = await getDB();
+      await db.clear("scans");
+    }
+
+    async function addLog(entry) {
+      const db = await getDB();
+      await db.put("logs", entry);
+    }
+    async function deleteLog(id) {
+      const db = await getDB();
+      await db.delete("logs", id);
+    }
+    async function listLogsByDate(date) {
+      const db = await getDB();
+      const tx = db.transaction("logs", "readonly");
+      const idx = tx.store.index("by_date");
+      const out = await idx.getAll(date);
+      out.sort((a,b) => b.timestamp - a.timestamp);
+      await tx.done;
+      return out;
+    }
+    async function getTodayCalories() {
+      const logs = await listLogsByDate(todayStr());
+      return logs.reduce((sum, x) => sum + (Number(x.kcalLogged) || 0), 0);
+    }
+    async function getWeekCalories() {
+      const goal = getDailyGoal();
+      const days = [];
+      const now = new Date();
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        const date = todayStr(d);
+        const logs = await listLogsByDate(date);
+        const kcal = logs.reduce((s, x) => s + (Number(x.kcalLogged) || 0), 0);
+        days.push({ date, kcal, pct: goal > 0 ? clamp(kcal / goal, 0, 2) : 0 });
+      }
+      return days;
+    }
+
+    async function listLogsLastNDays(n = 7) {
+      const out = [];
+      const now = new Date();
+      for (let i = n - 1; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        const date = todayStr(d);
+        const logs = await listLogsByDate(date);
+        out.push({ date, logs });
+      }
+      return out;
+    }
+
+    async function buildInsights() {
+      const goal = getDailyGoal();
+      const byDay = await listLogsLastNDays(7);
+      const allLogs = byDay.flatMap(x => x.logs);
+      const daysWithAny = byDay.filter(x => x.logs.length > 0).length;
+      const totalKcal = allLogs.reduce((s, x) => s + (Number(x.kcalLogged) || 0), 0);
+      const avgKcal = daysWithAny ? Math.round(totalKcal / daysWithAny) : 0;
+
+      const overGoalDays = goal > 0
+        ? byDay.filter(x => x.logs.reduce((s, l) => s + (Number(l.kcalLogged) || 0), 0) > goal).length
+        : 0;
+
+      // Frequently logged items (by name)
+      const freq = new Map();
+      for (const l of allLogs) {
+        const k = String(l.productName || "Unknown").trim();
+        freq.set(k, (freq.get(k) || 0) + 1);
+      }
+      const topItems = Array.from(freq.entries()).sort((a,b) => b[1]-a[1]).slice(0, 3);
+
+      // Pull extra nutrition from cached scans for logged barcodes (best effort)
+      const byBarcode = new Map();
+      for (const l of allLogs) {
+        const bc = String(l.barcode || "");
+        if (!bc || byBarcode.has(bc)) continue;
+        const s = await getScanByBarcode(bc);
+        if (s?.product) byBarcode.set(bc, s.product);
+      }
+
+      let ultraProcessedCount = 0;
+      let highSugarCount = 0;
+      let highSodiumCount = 0;
+      let highSatFatCount = 0;
+      let withNutrition = 0;
+
+      for (const l of allLogs) {
+        const p = byBarcode.get(String(l.barcode || ""));
+        if (!p) continue;
+        withNutrition++;
+        const nova = Number(p.nova_group || 0);
+        if (nova === 4) ultraProcessedCount++;
+        const sugar = Number(p.sugar_per_100g || 0);
+        const sodium = Number(p.sodium_per_100g || 0);
+        const satFat = Number(p.sat_fat_per_100g || 0);
+        if (sugar > 10) highSugarCount++;
+        if (sodium > 0.6) highSodiumCount++;
+        if (satFat > 5) highSatFatCount++;
+      }
+
+      // Timing pattern
+      const hours = allLogs.map(l => new Date(l.timestamp).getHours());
+      const lateMeals = hours.filter(h => h >= 21).length;
+      const morningMeals = hours.filter(h => h <= 10).length;
+
+      const insights = [];
+
+      if (goal <= 0) {
+        insights.push({
+          title: "Set your calorie goal",
+          body: "Go to Settings and set a daily calorie goal to unlock goal-based insights and alerts."
+        });
+      } else if (!allLogs.length) {
+        insights.push({
+          title: "Start logging",
+          body: "Log at least one meal to get personalized weekly insights (all on-device)."
+        });
+      } else {
+        insights.push({
+          title: "Weekly calorie trend",
+          body: `${daysWithAny} day(s) logged. Average: ${avgKcal} kcal/day. Days over goal: ${overGoalDays}/7.`
+        });
+
+        if (topItems.length) {
+          insights.push({
+            title: "Most frequent items",
+            body: topItems.map(([name, c]) => `${name} (${c}×)`).join(", ")
+          });
+        }
+
+        if (withNutrition) {
+          const parts = [];
+          if (ultraProcessedCount) parts.push(`${ultraProcessedCount} ultra-processed (NOVA 4)`);
+          if (highSugarCount) parts.push(`${highSugarCount} high-sugar`);
+          if (highSodiumCount) parts.push(`${highSodiumCount} high-sodium`);
+          if (highSatFatCount) parts.push(`${highSatFatCount} high sat-fat`);
+          insights.push({
+            title: "Risk flags (from nutrition facts)",
+            body: parts.length
+              ? `In your logged items with nutrition data: ${parts.join(", ")}.`
+              : "No major sugar/sodium/sat-fat flags detected in items with nutrition data."
+          });
+
+          // Actionable tip selection
+          let tip = "Aim for a balanced plate: add fiber (fruit/veg/whole grains) and protein to stay full longer.";
+          if (highSugarCount >= 3) tip = "Sugar trend: swap one sugary item/day for a lower-sugar option (or halve the portion).";
+          else if (highSodiumCount >= 2) tip = "Sodium trend: choose lower-sodium versions and add potassium-rich foods (banana, beans, greens).";
+          else if (ultraProcessedCount >= 3) tip = "Processing trend: try replacing 1 NOVA-4 item with a minimally processed snack (nuts, yogurt, fruit).";
+          insights.push({ title: "Next best step", body: tip });
+        } else {
+          insights.push({
+            title: "More accurate insights",
+            body: "Some logged items don’t have cached nutrition details yet. Scanning those products again will improve your trends."
+          });
+        }
+
+        if (lateMeals >= 3) {
+          insights.push({
+            title: "Timing pattern",
+            body: "You’ve logged several late meals (after 9pm). If you’re trying to manage appetite, shifting one meal earlier can help."
+          });
+        } else if (morningMeals === 0 && allLogs.length >= 4) {
+          insights.push({
+            title: "Timing pattern",
+            body: "No morning meals logged. If energy dips midday, consider a protein + fiber breakfast."
+          });
+        }
+      }
+
+      return { insights, stats: { goal, daysWithAny, avgKcal, overGoalDays } };
+    }
+
+    // ---------------------------
+    // Notifications (local)
+    // ---------------------------
+    function scheduleLocalNotification(title, body, delayMs = 0) {
+      if (Notification.permission !== "granted") return;
+      setTimeout(() => {
+        try {
+          new Notification(title, {
+            body,
+            icon: APP.svgIconDataUrl,
+            badge: APP.svgIconDataUrl,
+            tag: "health-advisor",
+            renotify: true
+          });
+        } catch (e) {
+          // Some browsers require SW notifications; fall back silently.
+        }
+      }, delayMs);
+    }
+
+    async function checkCalorieAlert() {
+      if (!getAlertsEnabled()) return;
+      const consumed = await getTodayCalories();
+      const goal = getDailyGoal();
+      const remaining = goal - consumed;
+      const threshold = getAlertThreshold();
+
+      if (remaining <= threshold && remaining > 0) {
+        scheduleLocalNotification("⚠️ Calorie Alert", `You have ${Math.max(0, Math.round(remaining))} kcal left today. Choose wisely!`);
+      }
+      if (consumed >= goal) {
+        scheduleLocalNotification("🚫 Daily Limit Reached", `You've hit your ${goal} kcal goal for today.`);
+      }
+    }
+
+    // ---------------------------
+    // UI routing
+    // ---------------------------
+    const SCREENS = {
+      onboarding: $("#screen-onboarding"),
+      scan: $("#screen-scan"),
+      log: $("#screen-log"),
+      settings: $("#screen-settings"),
+    };
+
+    function showScreen(name) {
+      Object.entries(SCREENS).forEach(([k, el]) => el.classList.toggle("active", k === name));
+      $("#tabScan").classList.toggle("active", name === "scan");
+      $("#tabLog").classList.toggle("active", name === "log");
+      $("#tabSettings").classList.toggle("active", name === "settings");
+      if (name !== "scan") stopScanner();
+    }
+
+    // ---------------------------
+    // Calorie ring
+    // ---------------------------
+    function calorieColor(pct) {
+      if (pct < 0.60) return "var(--success)";
+      if (pct < 0.85) return "var(--warning)";
+      return "var(--danger)";
+    }
+
+    async function renderCaloriePill(where = "subtitle") {
+      const consumed = await getTodayCalories();
+      const goal = getDailyGoal();
+      const remaining = goal > 0 ? Math.max(0, goal - consumed) : 0;
+      const pct = goal > 0 ? (consumed / goal) : 0;
+      const sub = $("#subtitle");
+      sub.textContent = goal > 0
+        ? `${getUserName() ? (getUserName() + " • ") : ""}${Math.round(consumed)} kcal used • ${Math.round(remaining)} left`
+        : `${getUserName() ? (getUserName() + " • ") : ""}Set up your calorie goal to start tracking`;
+      $("#logTotalPill").textContent = `${Math.round(consumed)} / ${goal}`;
+      $("#logTotalPill").style.color = calorieColor(pct);
+    }
+
+    // ---------------------------
+    // ZXing scanning
+    // ---------------------------
+    let codeReader = null;
+    let scanning = false;
+    let lastScanned = { text: "", ts: 0 };
+
+    async function ensureZXing() {
+      if (!window.ZXing) throw new Error("ZXing library failed to load.");
+      if (!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
+      return codeReader;
+    }
+
+    async function pickBackCameraDeviceId() {
+      const reader = await ensureZXing();
+      const devices = await reader.getVideoInputDevices();
+      if (!devices || devices.length === 0) return null;
+      const back = devices.find(d => /back|rear|environment/i.test(d.label || "")) || devices[devices.length - 1];
+      return back.deviceId;
+    }
+
+    function setScanStatus(text, strong = false) {
+      $("#scanStatus").innerHTML = strong ? `<strong>${escapeHtml(text)}</strong>` : escapeHtml(text);
+    }
+
+    async function startScanner() {
+      setNetPill();
+      $("#resultCard").style.display = "none";
+      try {
+        const reader = await ensureZXing();
+        const deviceId = await pickBackCameraDeviceId();
+        if (!deviceId) {
+          setScanStatus("No camera found on this device.", true);
+          toast("No camera available. Try a phone browser.", "error");
+          return;
+        }
+        scanning = true;
+        setScanStatus("Point at a barcode…", false);
+        await reader.decodeFromVideoDevice(deviceId, "video", async (result, err) => {
+          if (!scanning) return;
+          if (result) {
+            const text = String(result.getText() || "").trim();
+            if (!text) return;
+            const now = Date.now();
+            if (text === lastScanned.text && (now - lastScanned.ts) < 3000) return;
+            lastScanned = { text, ts: now };
+            await onBarcodeScanned(text);
+          }
+        });
+      } catch (e) {
+        scanning = false;
+        const msg = (e && e.name === "NotAllowedError")
+          ? "Camera access needed. Tap settings in your browser to allow the camera."
+          : "Couldn't start camera scanning. Try refreshing or using a phone.";
+        setScanStatus(msg, true);
+        toast(msg, "error", 5200);
+      }
+    }
+
+    function stopScanner() {
+      scanning = false;
+      try {
+        if (codeReader) codeReader.reset();
+      } catch (_) {}
+      const v = $("#video");
+      try {
+        if (v && v.srcObject) {
+          const tracks = v.srcObject.getTracks?.() || [];
+          tracks.forEach(t => t.stop());
+          v.srcObject = null;
+        }
+      } catch (_) {}
+    }
+
+    // ---------------------------
+    // Open Food Facts + on-device analysis (no API key)
+    // ---------------------------
+    function extractProduct(data) {
+      const p = data?.product || {};
+      const nutr = p?.nutriments || {};
+      return {
+        name: p.product_name || "Unknown Product",
+        brand: p.brands || "",
+        ingredients: p.ingredients_text || "Not listed",
+        kcal_per_100g: nutr?.["energy-kcal_100g"] || 0,
+        sugar_per_100g: nutr?.sugars_100g || 0,
+        sat_fat_per_100g: nutr?.["saturated-fat_100g"] || 0,
+        sodium_per_100g: nutr?.sodium_100g || 0,
+        fiber_per_100g: nutr?.fiber_100g || 0,
+        protein_per_100g: nutr?.proteins_100g || 0,
+        nutriscore: p.nutriscore_grade || "unknown",
+        nova_group: p.nova_group || null,
+        additives: p.additives_tags || [],
+        image_url: p.image_url || null,
+        found: data?.status === 1
+      };
+    }
+
+    async function fetchOpenFoodFacts(barcode) {
+      // Multi-source (free) lookup strategy:
+      // - Try OFF v3 first, then fall back to OFF v2 if needed.
+      const sources = [];
+      const v3 = APP.offEndpoint(barcode);
+      try {
+        const res = await fetch(v3, { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          sources.push({ name: "Open Food Facts v3", ok: true, url: v3 });
+          return { data, sources };
+        }
+        sources.push({ name: "Open Food Facts v3", ok: false, url: v3, status: res.status });
+      } catch (e) {
+        sources.push({ name: "Open Food Facts v3", ok: false, url: v3, error: String(e?.message || e) });
+      }
+
+      const v2 = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json`;
+      const res2 = await fetch(v2, { cache: "no-store" });
+      if (!res2.ok) {
+        sources.push({ name: "Open Food Facts v2", ok: false, url: v2, status: res2.status });
+        throw new Error(`Open Food Facts error (${res2.status})`);
+      }
+      const data2 = await res2.json();
+      sources.push({ name: "Open Food Facts v2", ok: true, url: v2 });
+      return { data: data2, sources };
+    }
+
+    function normalizeBarcodeDigits(barcode) {
+      return String(barcode || "").replace(/[^\d]/g, "");
+    }
+
+    function isValidEan13(ean) {
+      const s = normalizeBarcodeDigits(ean);
+      if (s.length !== 13) return false;
+      const digits = s.split("").map(d => Number(d));
+      const check = digits[12];
+      let sum = 0;
+      for (let i = 0; i < 12; i++) sum += digits[i] * (i % 2 === 0 ? 1 : 3);
+      const calc = (10 - (sum % 10)) % 10;
+      return calc === check;
+    }
+
+    function isValidUpcA(upc) {
+      const s = normalizeBarcodeDigits(upc);
+      if (s.length !== 12) return false;
+      const digits = s.split("").map(d => Number(d));
+      const check = digits[11];
+      let sumOdd = 0, sumEven = 0;
+      for (let i = 0; i < 11; i++) (i % 2 === 0 ? (sumOdd += digits[i]) : (sumEven += digits[i]));
+      const calc = (10 - (((sumOdd * 3) + sumEven) % 10)) % 10;
+      return calc === check;
+    }
+
+    function gs1PrefixRegion(barcode) {
+      // Minimal GS1 prefix hints (not a proof of origin/legitimacy).
+      const s = normalizeBarcodeDigits(barcode);
+      const p3 = Number(s.slice(0, 3));
+      if (!Number.isFinite(p3)) return null;
+      if (p3 >= 0 && p3 <= 19) return "US/CA (UPC/EAN)";
+      if (p3 >= 30 && p3 <= 39) return "US (drugs)";
+      if (p3 >= 40 && p3 <= 49) return "Reserved";
+      if (p3 >= 50 && p3 <= 59) return "Coupons";
+      if (p3 >= 60 && p3 <= 139) return "US/CA";
+      if (p3 >= 300 && p3 <= 379) return "France";
+      if (p3 >= 380 && p3 <= 389) return "Bulgaria";
+      if (p3 >= 400 && p3 <= 440) return "Germany";
+      if (p3 >= 450 && p3 <= 459) return "Japan";
+      if (p3 >= 460 && p3 <= 469) return "Russia";
+      if (p3 >= 470 && p3 <= 479) return "Kyrgyzstan";
+      if (p3 >= 480 && p3 <= 489) return "Philippines";
+      if (p3 >= 490 && p3 <= 499) return "Japan";
+      if (p3 >= 500 && p3 <= 509) return "UK";
+      if (p3 >= 690 && p3 <= 699) return "China";
+      if (p3 >= 890 && p3 <= 890) return "India";
+      if (p3 >= 900 && p3 <= 919) return "Austria";
+      if (p3 >= 930 && p3 <= 939) return "Australia";
+      return "GS1 prefix (region varies)";
+    }
+
+    function computeLegitimacy(barcode, product, sources) {
+      const digits = normalizeBarcodeDigits(barcode);
+      const isEan = digits.length === 13;
+      const isUpc = digits.length === 12;
+      const checkOk = isEan ? isValidEan13(digits) : (isUpc ? isValidUpcA(digits) : false);
+      const region = (isEan || isUpc) ? gs1PrefixRegion(digits) : null;
+      const found = !!product?.found;
+      const okSources = (sources || []).filter(s => s.ok).map(s => s.name);
+
+      const reasons = [];
+      if (!checkOk) reasons.push("Barcode check digit failed (could be mis-scan or non-standard code)");
+      if (checkOk) reasons.push("Barcode check digit valid");
+      if (region) reasons.push(`Prefix hint: ${region}`);
+      if (found) reasons.push("Product found in Open Food Facts");
+      else reasons.push("Product not found in Open Food Facts");
+      if (product?.name && product.name !== "Unknown Product") reasons.push("Product name present");
+      if (product?.ingredients && product.ingredients !== "Not listed") reasons.push("Ingredients present");
+      if (Number(product?.kcal_per_100g || 0) > 0) reasons.push("Nutrition facts present");
+      if (okSources.length) reasons.push(`Sources: ${okSources.join(", ")}`);
+
+      // Simple status
+      let status = "Suspicious";
+      if (checkOk && found && (product?.name && product.name !== "Unknown Product")) status = "Likely legitimate";
+      if (checkOk && found && Number(product?.kcal_per_100g || 0) > 0 && (product?.ingredients && product.ingredients !== "Not listed")) status = "Likely legitimate";
+      if (!checkOk && found) status = "Uncertain";
+      if (checkOk && !found) status = "Uncertain";
+
+      return { status, reasons, checkOk, region, sources: okSources };
+    }
+
+    function analyzeHeuristic(product, barcode = "", sources = []) {
+      const ing = String(product?.ingredients || "").toLowerCase();
+      const additives = Array.isArray(product?.additives) ? product.additives : [];
+      const nova = Number(product?.nova_group || 0) || null;
+      const nutri = String(product?.nutriscore || "unknown").toLowerCase();
+
+      let score =
+        nutri === "a" ? 9 :
+        nutri === "b" ? 8 :
+        nutri === "c" ? 6 :
+        nutri === "d" ? 4 :
+        nutri === "e" ? 2 : 5;
+
+      if (nova === 1) score += 1;
+      if (nova === 3) score -= 1;
+      if (nova === 4) score -= 2;
+
+      const sugar = Number(product?.sugar_per_100g || 0);
+      const satFat = Number(product?.sat_fat_per_100g || 0);
+      const sodium = Number(product?.sodium_per_100g || 0); // g per 100g (OFF uses g)
+      const fiber = Number(product?.fiber_per_100g || 0);
+      const protein = Number(product?.protein_per_100g || 0);
+
+      if (sugar > 15) score -= 2; else if (sugar > 10) score -= 1;
+      if (satFat > 5) score -= 1.5; else if (satFat > 2) score -= 0.5;
+      if (sodium > 0.6) score -= 1.5; else if (sodium > 0.3) score -= 0.5;
+      if (fiber > 6) score += 1; else if (fiber > 3) score += 0.5;
+      if (protein > 10) score += 0.5;
+      if (additives.length > 5) score -= 1; else if (additives.length > 2) score -= 0.5;
+
+      const harmful = [];
+      const good = [];
+
+      const flags = [
+        { re: /\bhigh fructose corn syrup\b|\bhfcs\b/, name: "HFCS", risk: "Often signals very high added sugar.", severity: "High" },
+        { re: /\bpartially hydrogenated\b|\btrans fat\b/, name: "Partially hydrogenated oils", risk: "May contain trans fats that raise heart risk.", severity: "High" },
+        { re: /\baspartame\b/, name: "Aspartame", risk: "Artificial sweetener; some people prefer to limit.", severity: "Medium" },
+        { re: /\bsucralose\b/, name: "Sucralose", risk: "Artificial sweetener; may affect gut comfort for some.", severity: "Medium" },
+        { re: /\bmonosodium glutamate\b|\bmsg\b/, name: "MSG", risk: "Generally considered safe, but some people are sensitive.", severity: "Low" },
+        { re: /\bsodium nitrite\b|\bnitrite\b/, name: "Nitrites", risk: "In processed meats, frequent intake is best limited.", severity: "High" },
+        { re: /\bpalm oil\b/, name: "Palm oil", risk: "Often linked to higher saturated fat.", severity: "Low" }
+      ];
+      for (const f of flags) {
+        if (f.re.test(ing)) harmful.push({ name: f.name, risk: f.risk, severity: f.severity });
+      }
+
+      if (fiber >= 3) good.push("Fiber");
+      if (protein >= 10) good.push("Higher protein");
+      if (nutri === "a" || nutri === "b") good.push("Better Nutri-Score");
+      if (nova === 1) good.push("Minimally processed");
+
+      const allergyText = String(getAllergies() || "").toLowerCase();
+      const allergyWords = ["peanut", "tree nut", "milk", "lactose", "egg", "soy", "gluten", "wheat", "sesame", "fish", "shellfish"];
+      for (const w of allergyWords) {
+        if (allergyText.includes(w) && ing.includes(w)) {
+          harmful.unshift({ name: `Allergen: ${w}`, risk: "Matches your allergies/conditions. Avoid if applicable.", severity: "High" });
+        }
+      }
+
+      score = clamp(score, 1, 10);
+      const rating = score >= 7 ? "Healthy" : (score >= 4.5 ? "Moderately Healthy" : "Unhealthy");
+
+      const kcal100 = Number(product?.kcal_per_100g || 0);
+      const grams = kcal100 >= 450 ? 30 : (kcal100 >= 250 ? 45 : 60);
+      const servingKcal = calcKcalForGrams(kcal100, grams);
+      const frequency =
+        rating === "Healthy" ? "can be a regular choice" :
+        rating === "Moderately Healthy" ? "best as an occasional choice" :
+        "limit; treat-style food";
+
+      const ratingReason =
+        rating === "Healthy"
+          ? "Overall a decent option based on processing and nutrition facts."
+          : rating === "Moderately Healthy"
+            ? "Some nutrition or processing flags suggest moderation."
+            : "Multiple nutrition or processing flags suggest limiting.";
+
+      const summary =
+        rating === "Healthy"
+          ? "Good fit for most days in sensible portions. Balance it with whole foods."
+          : rating === "Moderately Healthy"
+            ? "Okay sometimes, but watch portion size and frequency. Pair with healthier sides."
+            : "Best kept as an occasional treat. Small portions are your friend.";
+
+      // WHO-style quick checks (computed locally; not an official label claim)
+      // WHO guideline examples: sodium < 2g/day; free sugars < 10% energy (approx 50g/day @ 2000 kcal).
+      const goalKcal = getDailyGoal() || 2000;
+      const sugarPerServing = (Number(product?.sugar_per_100g || 0) * grams) / 100;
+      const sodiumPerServingG = (Number(product?.sodium_per_100g || 0) * grams) / 100;
+      const satFatPerServing = (Number(product?.sat_fat_per_100g || 0) * grams) / 100;
+      const sugarLimitG = Math.round(((goalKcal * 0.10) / 4)); // 10% energy, 4 kcal/g
+      const sodiumLimitG = 2.0;
+      const whoFlags = [];
+      if (sugarPerServing >= Math.max(10, sugarLimitG * 0.25)) whoFlags.push(`Sugar: ~${Math.round(sugarPerServing)}g per serving (limit ~${sugarLimitG}g/day)`);
+      if (sodiumPerServingG >= 0.5) whoFlags.push(`Sodium: ~${(sodiumPerServingG * 1000).toFixed(0)}mg per serving (limit ~${(sodiumLimitG * 1000).toFixed(0)}mg/day)`);
+      if (satFatPerServing >= 5) whoFlags.push(`Sat fat: ~${satFatPerServing.toFixed(1)}g per serving (keep low overall)`);
+
+      const legitimacy = computeLegitimacy(barcode, product, sources);
+
+      return {
+        rating,
+        rating_reason: ratingReason,
+        score: Number(score.toFixed(1)),
+        harmful_ingredients: harmful.slice(0, 6),
+        good_ingredients: Array.from(new Set(good)).slice(0, 6),
+        safe_serving: { amount: `${grams}g`, frequency, kcal: servingKcal },
+        summary,
+        legitimacy,
+        who_flags: whoFlags
+      };
+    }
+
+    // ---------------------------
+    // Result card rendering + logging
+    // ---------------------------
+    function ratingClass(r) {
+      if (r === "Healthy") return "healthy";
+      if (r === "Moderately Healthy") return "mod";
+      return "unhealthy";
+    }
+    function ratingDot(r) {
+      if (r === "Healthy") return "🟢";
+      if (r === "Moderately Healthy") return "🟡";
+      return "🔴";
+    }
+
+    function severityClass(sev) {
+      if (/high/i.test(sev)) return "sevHigh";
+      if (/medium/i.test(sev)) return "sevMed";
+      return "sevLow";
+    }
+
+    function parseServingAmountToGrams(amountStr) {
+      const s = String(amountStr || "").toLowerCase().trim();
+      const m = s.match(/(\d+(?:\.\d+)?)\s*(g|gram|grams|ml)\b/);
+      if (!m) return null;
+      const n = Number(m[1]);
+      if (!Number.isFinite(n) || n <= 0) return null;
+      return Math.round(n);
+    }
+
+    function calcKcalForGrams(kcalPer100, grams) {
+      const k = (Number(kcalPer100) || 0) * (Number(grams) || 0) / 100;
+      return Math.max(0, Math.round(k));
+    }
+
+    function renderGauge(score10) {
+      const s = clamp(Number(score10) || 0, 0, 10);
+      const pct = s / 10;
+      const r = 30;
+      const c = 2 * Math.PI * r;
+      const dash = c * pct;
+      const color = pct >= 0.7 ? "var(--success)" : (pct >= 0.45 ? "var(--warning)" : "var(--danger)");
+      return `
+        <div class="gauge" aria-label="Health score gauge">
+          <svg viewBox="0 0 80 80">
+            <circle cx="40" cy="40" r="${r}" fill="none" stroke="rgba(30,45,69,.9)" stroke-width="10" />
+            <circle cx="40" cy="40" r="${r}" fill="none" stroke="${color}" stroke-width="10"
+              stroke-linecap="round" stroke-dasharray="${dash} ${c}" />
+          </svg>
+          <div class="center">
+            <b>${Math.round(s)}</b>
+            <span>/ 10</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderResultCard(barcode, product, analysis, cached = false) {
+      const host = $("#resultCard");
+      host.style.display = "block";
+
+      const rating = analysis?.rating || "Unhealthy";
+      const score = analysis?.score ?? 0;
+      const badgeCls = ratingClass(rating);
+      const legit = analysis?.legitimacy;
+      const legitText = legit?.status || "Uncertain";
+      const legitCls = /likely/i.test(legitText) ? "healthy" : (/uncertain/i.test(legitText) ? "mod" : "unhealthy");
+      const harmful = Array.isArray(analysis?.harmful_ingredients) ? analysis.harmful_ingredients : [];
+      const good = Array.isArray(analysis?.good_ingredients) ? analysis.good_ingredients : [];
+      const safe = analysis?.safe_serving || {};
+      const whoFlags = Array.isArray(analysis?.who_flags) ? analysis.who_flags : [];
+      const servingDefault = parseServingAmountToGrams(safe.amount) ?? 60;
+      const kcalPer100 = Number(product?.kcal_per_100g || 0);
+      const safeKcal = Number(safe.kcal || calcKcalForGrams(kcalPer100, servingDefault));
+      const safeFreq = String(safe.frequency || "occasionally");
+      const img = product?.image_url ? `<img src="${escapeHtml(product.image_url)}" alt="" />` : "";
+
+      host.innerHTML = `
+        <div class="resultHead">
+          <div class="thumb">${img}</div>
+          <div style="min-width:0;">
+            <div style="font-weight:900; font-size:15px; line-height:1.15;">${escapeHtml(product.name || "Unknown Product")}</div>
+            <div class="hint" style="margin-top:3px;">${escapeHtml(product.brand || "")}${cached ? " • <span class='mono'>offline cache</span>" : ""}</div>
+            <div style="margin-top:8px;">
+              <span class="badge ${badgeCls}">${ratingDot(rating)} ${escapeHtml(rating)}</span>
+              <span class="badge ${legitCls}" style="margin-left:8px;">✅ ${escapeHtml(legitText)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="gaugeWrap">
+          ${renderGauge(score)}
+          <div style="min-width:0;">
+            <div style="font-weight:900; font-size:14px;">${escapeHtml(analysis?.rating_reason || "Assessment")}</div>
+            <div class="hint" style="margin-top:6px;">${escapeHtml(analysis?.summary || "")}</div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div style="font-weight:900; font-size:13px; margin-bottom:8px;">Harmful ingredients</div>
+        <div class="pills" id="harmPills">
+          ${harmful.length ? harmful.map(h => `
+            <span class="pillTag ${severityClass(h?.severity)}">
+              <b>${escapeHtml(h?.name || "Unknown")}</b>
+              <span class="hint" style="color:inherit; opacity:.9;">${escapeHtml(h?.severity || "Low")}</span>
+            </span>
+          `).join("") : `<span class="pillTag good">None highlighted</span>`}
+        </div>
+
+        ${harmful.length ? `<div class="hint" style="margin-top:8px;">${escapeHtml(harmful[0]?.risk || "")}</div>` : ""}
+
+        <div class="divider"></div>
+
+        <div style="font-weight:900; font-size:13px; margin-bottom:8px;">WHO-style checks</div>
+        <div class="pills">
+          ${whoFlags.length ? whoFlags.map(t => `<span class="pillTag sevMed">${escapeHtml(t)}</span>`).join("") : `<span class="pillTag good">No major flags for the suggested serving</span>`}
+        </div>
+
+        <div class="divider"></div>
+
+        <div style="font-weight:900; font-size:13px; margin-bottom:8px;">Good ingredients</div>
+        <div class="pills">
+          ${good.length ? good.map(g => `<span class="pillTag good">${escapeHtml(g)}</span>`).join("") : `<span class="pillTag">Not specified</span>`}
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="serving">
+          <div class="row">
+            <div>
+              <b>Safe serving</b>
+              <div class="hint" style="margin-top:4px;">${escapeHtml(safe.amount || (servingDefault + "g"))} • ${escapeHtml(safeFreq)}</div>
+            </div>
+            <div class="pill mono">${Math.round(safeKcal)} kcal</div>
+          </div>
+
+          <div class="divider" style="margin: 2px 0;"></div>
+
+          <div class="row">
+            <div style="font-weight:900;">Log This Meal</div>
+            <div class="hint">Adjust portion</div>
+          </div>
+          <div class="rangeRow">
+            <div class="small">Portion (grams)</div>
+            <div class="val" id="servG">${servingDefault}g</div>
+          </div>
+          <input id="servSlider" type="range" min="10" max="300" step="5" value="${servingDefault}" />
+          <div class="rangeRow">
+            <div class="small">Estimated kcal</div>
+            <div class="val" id="servK">${calcKcalForGrams(kcalPer100, servingDefault)} kcal</div>
+          </div>
+          <button class="btn primary" id="btnLogMeal">Log</button>
+          <div class="hint">Uses kcal per 100g from Open Food Facts when available.</div>
+        </div>
+      `;
+
+      const slider = host.querySelector("#servSlider");
+      const gOut = host.querySelector("#servG");
+      const kOut = host.querySelector("#servK");
+      function syncServing() {
+        const g = Number(slider.value);
+        gOut.textContent = `${g}g`;
+        kOut.textContent = `${calcKcalForGrams(kcalPer100, g)} kcal`;
+      }
+      slider.addEventListener("input", syncServing);
+      syncServing();
+
+      host.querySelector("#btnLogMeal").addEventListener("click", async () => {
+        const g = Number(slider.value);
+        const kcalLogged = calcKcalForGrams(kcalPer100, g) || Math.round(Number(safeKcal) || 0);
+        const entry = {
+          id: crypto.randomUUID(),
+          date: todayStr(),
+          timestamp: Date.now(),
+          barcode,
+          productName: product?.name || "Unknown Product",
+          servingGrams: g,
+          kcalLogged,
+          rating: rating,
+          score: Number(score) || 0
+        };
+        await addLog(entry);
+        toast("Meal logged.", "success");
+        await renderCaloriePill();
+        await renderLogScreen();
+        await checkCalorieAlert();
+      });
+    }
+
+    function renderResultSkeleton() {
+      const host = $("#resultCard");
+      host.style.display = "block";
+      host.innerHTML = `
+        <div class="resultHead">
+          <div class="thumb"><div class="skeleton" style="width:100%; height:100%;"></div></div>
+          <div style="flex:1;">
+            <div class="skeleton" style="height:16px; width: 80%;"></div>
+            <div class="skeleton" style="height:12px; width: 50%; margin-top:8px;"></div>
+            <div class="skeleton" style="height:30px; width: 140px; margin-top:10px; border-radius:999px;"></div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="skeleton" style="height:74px;"></div>
+        <div class="divider"></div>
+        <div class="skeleton" style="height:14px; width: 55%;"></div>
+        <div class="skeleton" style="height:38px; margin-top:10px;"></div>
+        <div class="divider"></div>
+        <div class="skeleton" style="height:14px; width: 45%;"></div>
+        <div class="skeleton" style="height:38px; margin-top:10px;"></div>
+        <div class="divider"></div>
+        <div class="skeleton" style="height:150px;"></div>
+      `;
+    }
+
+    async function onBarcodeScanned(barcode) {
+      stopScanner();
+      setScanStatus(`Scanned ${barcode}`, true);
+      renderResultSkeleton();
+
+      const cached = await getScanByBarcode(barcode);
+      if (!navigator.onLine && cached?.analysis && cached?.product) {
+        renderResultCard(barcode, cached.product, cached.analysis, true);
+        toast("Loaded from offline cache.", "info");
+        return;
+      }
+
+      setScanStatus("Fetching product data…", true);
+      let product = null;
+      try {
+        const { data, sources } = await fetchOpenFoodFacts(barcode);
+        product = extractProduct(data);
+        product._sources = sources || [];
+      } catch (e) {
+        $("#resultCard").style.display = "block";
+        $("#resultCard").innerHTML = `
+          <b>API error</b>
+          <div class="hint" style="margin-top:6px;">Couldn't reach Open Food Facts. ${escapeHtml(String(e?.message || e))}</div>
+          <div class="divider"></div>
+          <button class="btn" id="retryScan">Retry</button>
+        `;
+        $("#retryScan").addEventListener("click", () => startScanner());
+        return;
+      }
+
+      if (!product.found) {
+        setScanStatus("Product not in database.", true);
+        $("#resultCard").style.display = "block";
+        $("#resultCard").innerHTML = `
+          <b>Product not found</b>
+          <div class="hint" style="margin-top:6px;">This barcode isn't in Open Food Facts. Add it manually?</div>
+          <div class="divider"></div>
+          <div class="grid2">
+            <div>
+              <div class="label">Product name</div>
+              <input class="input" id="mn-name" placeholder="e.g. Granola Bar" />
+            </div>
+            <div>
+              <div class="label">Brand</div>
+              <input class="input" id="mn-brand" placeholder="Optional" />
+            </div>
+          </div>
+          <div style="margin-top:10px;">
+            <div class="label">Ingredients</div>
+            <textarea class="textarea" id="mn-ing" placeholder="Copy from label if possible"></textarea>
+          </div>
+          <div class="grid2" style="margin-top:10px;">
+            <div>
+              <div class="label">kcal per 100g</div>
+              <input class="input mono" id="mn-kcal" type="number" min="0" step="1" value="0" />
+            </div>
+            <div>
+              <div class="label">Sugar per 100g (g)</div>
+              <input class="input mono" id="mn-sugar" type="number" min="0" step="0.1" value="0" />
+            </div>
+          </div>
+          <div class="divider"></div>
+          <button class="btn primary" id="mn-analyze">Analyze</button>
+        `;
+        $("#mn-analyze").addEventListener("click", async () => {
+          const manualProduct = {
+            name: $("#mn-name").value.trim() || "Manual Product",
+            brand: $("#mn-brand").value.trim() || "",
+            ingredients: $("#mn-ing").value.trim() || "Not listed",
+            kcal_per_100g: Number($("#mn-kcal").value || 0),
+            sugar_per_100g: Number($("#mn-sugar").value || 0),
+            sat_fat_per_100g: 0,
+            sodium_per_100g: 0,
+            fiber_per_100g: 0,
+            protein_per_100g: 0,
+            nutriscore: "unknown",
+            nova_group: null,
+            additives: [],
+            image_url: null,
+            found: true
+          };
+          const analysis = analyzeHeuristic(manualProduct, barcode, [{ name: "Manual entry", ok: true }]);
+          renderResultCard(barcode, manualProduct, analysis, false);
+          setScanStatus("Done.", false);
+          await upsertScan({
+            id: barcode,
+            barcode,
+            timestamp: Date.now(),
+            product: manualProduct,
+            analysis
+          });
+        });
+        return;
+      }
+
+      setScanStatus("Analysing…", true);
+      const analysis = analyzeHeuristic(product, barcode, product._sources || []);
+      renderResultCard(barcode, product, analysis, false);
+      setScanStatus("Done.", false);
+      await upsertScan({
+        id: barcode,
+        barcode,
+        timestamp: Date.now(),
+        product,
+        analysis
+      });
+    }
+
+    // ---------------------------
+    // Log screen rendering
+    // ---------------------------
+    async function renderLogScreen(date = todayStr()) {
+      $("#logDateHint").textContent = date === todayStr() ? "Your meals logged today" : `Meals logged on ${date}`;
+      const logs = await listLogsByDate(date);
+      const host = $("#logList");
+      host.innerHTML = "";
+      $("#logEmpty").style.display = logs.length ? "none" : "block";
+
+      for (const it of logs) {
+        const badgeCls = ratingClass(it.rating);
+        const el = document.createElement("div");
+        el.className = "item";
+        el.innerHTML = `
+          <div class="meta">
+            <b>${escapeHtml(it.productName)}</b>
+            <span>${escapeHtml(timeStr(it.timestamp))} • ${escapeHtml(it.servingGrams)}g • <span class="mono">${escapeHtml(it.kcalLogged)} kcal</span></span>
+          </div>
+          <div class="right">
+            <span class="badge ${badgeCls}">${ratingDot(it.rating)} ${escapeHtml(it.rating)}</span>
+            <button class="btn ghost" style="padding:8px 10px;" aria-label="Delete log">Delete</button>
+          </div>
+        `;
+        el.querySelector("button").addEventListener("click", async () => {
+          await deleteLog(it.id);
+          toast("Deleted.", "info");
+          await renderCaloriePill();
+          await renderLogScreen(date);
+        });
+        host.appendChild(el);
+      }
+
+      await renderCaloriePill();
+      await renderWeekChart();
+      await renderInsights();
+    }
+
+    async function renderInsights() {
+      const body = $("#insightsBody");
+      if (!body) return;
+      body.innerHTML = `<div class="mutedBox">Building insights…</div>`;
+      try {
+        const { insights } = await buildInsights();
+        if (!insights.length) {
+          body.innerHTML = `<div class="mutedBox">No insights yet.</div>`;
+          return;
+        }
+        body.innerHTML = insights.map(i => `
+          <div class="item" style="align-items:flex-start;">
+            <div class="meta">
+              <b>${escapeHtml(i.title)}</b>
+              <span>${escapeHtml(i.body)}</span>
+            </div>
+          </div>
+        `).join("");
+      } catch (e) {
+        body.innerHTML = `<div class="mutedBox">Couldn’t build insights: ${escapeHtml(String(e?.message || e))}</div>`;
+      }
+    }
+
+    async function renderWeekChart() {
+      const days = await getWeekCalories();
+      const host = $("#weekChart");
+      host.innerHTML = "";
+      for (const d of days) {
+        const pct = d.pct;
+        const el = document.createElement("div");
+        el.className = "barWrap";
+        const label = d.date.slice(5);
+        const color = calorieColor(pct);
+        el.innerHTML = `
+          <div class="bar" title="${escapeHtml(d.date)}: ${Math.round(d.kcal)} kcal">
+            <i style="height:${Math.round(clamp(pct, 0, 1) * 100)}%; background:${color};"></i>
+          </div>
+          <label class="mono">${escapeHtml(label)}</label>
+        `;
+        el.addEventListener("click", async () => {
+          await renderLogScreen(d.date);
+          showScreen("log");
+        });
+        host.appendChild(el);
+      }
+    }
+
+    // ---------------------------
+    // "History" (implemented as quick modal-like list via toast area)
+    // ---------------------------
+    async function openHistory() {
+      const scans = await listScans(300);
+      const host = $("#resultCard");
+      host.style.display = "block";
+
+      host.innerHTML = `
+        <div class="row">
+          <div style="font-weight:900;">Scan History</div>
+          <button class="btn danger" id="clearHist" style="padding:8px 10px;">Clear</button>
+        </div>
+        <div style="margin-top:10px;">
+          <input class="input" id="histSearch" placeholder="Search by name…" />
+        </div>
+        <div class="divider"></div>
+        <div class="list" id="histList"></div>
+        <div class="hint" style="margin-top:10px;">Tap an item to open its result. Offline works for cached items.</div>
+      `;
+
+      const listEl = host.querySelector("#histList");
+      const searchEl = host.querySelector("#histSearch");
+      const clearBtn = host.querySelector("#clearHist");
+
+      function render(items) {
+        listEl.innerHTML = "";
+        if (!items.length) {
+          listEl.innerHTML = `<div class="mutedBox">No scans yet.</div>`;
+          return;
+        }
+        for (const s of items) {
+          const rating = s?.analysis?.rating || "Unhealthy";
+          const badgeCls = ratingClass(rating);
+          const name = s?.product?.name || s?.product?.product_name || "Unknown Product";
+          const brand = s?.product?.brand || "";
+          const img = s?.product?.image_url ? `<img src="${escapeHtml(s.product.image_url)}" alt="" />` : "";
+          const legitText = s?.analysis?.legitimacy?.status || "Uncertain";
+          const legitCls = /likely/i.test(legitText) ? "healthy" : (/uncertain/i.test(legitText) ? "mod" : "unhealthy");
+          const item = document.createElement("div");
+          item.className = "item";
+          const canRetry = false;
+          item.innerHTML = `
+            <div class="thumb" style="width:48px; height:48px;">${img}</div>
+            <div class="meta">
+              <b>${escapeHtml(name)}</b>
+              <span>${escapeHtml(brand)} • ${escapeHtml(new Date(s.timestamp).toLocaleDateString())}</span>
+            </div>
+            <div class="right">
+              <span class="badge ${badgeCls}">${ratingDot(rating)} ${escapeHtml(rating)}</span>
+              <span class="badge ${legitCls}">✅ ${escapeHtml(legitText)}</span>
+              <span class="small mono">${escapeHtml(s.barcode)}</span>
+            </div>
+          `;
+          item.addEventListener("click", () => {
+            if (!s?.product) return;
+            if (s?.analysis) {
+              renderResultCard(s.barcode, s.product, s.analysis, !navigator.onLine);
+            } else {
+              const analysis = analyzeHeuristic(s.product, s.barcode, s.product?._sources || []);
+              renderResultCard(s.barcode, s.product, analysis, !navigator.onLine);
+              // Best-effort backfill for older cached entries
+              upsertScan({ id: s.barcode, barcode: s.barcode, timestamp: s.timestamp, product: s.product, analysis }).catch(() => {});
+            }
+          });
+          listEl.appendChild(item);
+        }
+      }
+
+      render(scans);
+      searchEl.addEventListener("input", () => {
+        const q = searchEl.value.trim().toLowerCase();
+        if (!q) return render(scans);
+        render(scans.filter(s => String(s?.product?.name || "").toLowerCase().includes(q)));
+      });
+
+      clearBtn.addEventListener("click", async () => {
+        if (!confirm("Clear scan history? (Logged meals are kept.)")) return;
+        await clearScans();
+        toast("History cleared.", "success");
+        openHistory();
+      });
+    }
+
+    // ---------------------------
+    // Service worker + reminder
+    // ---------------------------
+    async function registerServiceWorker() {
+      if (!("serviceWorker" in navigator)) return;
+      try {
+        await navigator.serviceWorker.register("./sw.js", { scope: "./" });
+      } catch (_) {}
+    }
+
+    // ---------------------------
+    // PWA install prompt (Android/Desktop) + iOS instructions
+    // ---------------------------
+    let deferredInstallPrompt = null;
+    function isStandalone() {
+      return window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
+    }
+    function isIOS() {
+      return /iphone|ipad|ipod/i.test(navigator.userAgent);
+    }
+    function maybeShowInstallHint() {
+      if (isStandalone()) return;
+      const dismissed = lsGet("install_dismissed", "0") === "1";
+      if (dismissed) return;
+
+      // iOS: no beforeinstallprompt; show instructions once.
+      if (isIOS() && !deferredInstallPrompt) {
+        toast("Install: Safari → Share → Add to Home Screen.", "info", 6500);
+        lsSet("install_dismissed", "1");
+        return;
+      }
+    }
+
+    async function promptInstall() {
+      if (!deferredInstallPrompt) {
+        toast("Install isn't available right now. Try again after a few seconds.", "info");
+        return;
+      }
+      try {
+        deferredInstallPrompt.prompt();
+        await deferredInstallPrompt.userChoice;
+      } catch (_) {}
+      deferredInstallPrompt = null;
+      lsSet("install_dismissed", "1");
+    }
+
+    function maybeScheduleReminder() {
+      // Lightweight in-page reminder (works without Periodic Sync support).
+      // If the app is open near the reminder time, it will notify.
+      if (!getAlertsEnabled()) return;
+      const t = getReminderTime();
+      if (!t || Notification.permission !== "granted") return;
+      const [hh, mm] = t.split(":").map(x => Number(x));
+      if (!Number.isFinite(hh) || !Number.isFinite(mm)) return;
+      const now = new Date();
+      const target = new Date(now);
+      target.setHours(hh, mm, 0, 0);
+      if (target.getTime() < now.getTime()) target.setDate(target.getDate() + 1);
+      const delay = target.getTime() - now.getTime();
+      setTimeout(() => scheduleLocalNotification("Meal log reminder", "Remember to log your meal today."), delay);
+    }
+
+    // ---------------------------
+    // Settings + onboarding
+    // ---------------------------
+    function syncSettingsUIFromStorage() {
+      $("#st-name").value = getUserName();
+      $("#st-goal").value = String(getDailyGoal());
+      $("#st-allergies").value = getAllergies();
+      $("#st-threshold").value = String(getAlertThreshold());
+      $("#st-reminder").value = getReminderTime();
+      $("#st-alerts").classList.toggle("on", getAlertsEnabled());
+    }
+
+    function saveSettingsFromUI() {
+      lsSet("name", $("#st-name").value.trim());
+      lsSet("goal", String(Number($("#st-goal").value || 0)));
+      lsSet("allergies", $("#st-allergies").value.trim());
+      lsSet("alerts_threshold", String(Number($("#st-threshold").value || 300)));
+      lsSet("reminder_time", $("#st-reminder").value || "12:00");
+      toast("Saved.", "success");
+      renderCaloriePill();
+      maybeScheduleReminder();
+    }
+
+    async function askNotificationPermission() {
+      if (!("Notification" in window)) {
+        toast("Notifications aren't supported in this browser.", "error");
+        return;
+      }
+      const p = await Notification.requestPermission();
+      if (p === "granted") toast("Notifications enabled.", "success");
+      else toast("Notifications not enabled.", "info");
+    }
+
+    // Export / clear
+    async function exportData() {
+      const db = await getDB();
+      const scans = await db.getAll("scans");
+      const logs = await db.getAll("logs");
+      const settings = {
+        name: getUserName(),
+        goal: getDailyGoal(),
+        allergies: getAllergies(),
+        alerts_enabled: getAlertsEnabled(),
+        alerts_threshold: getAlertThreshold(),
+        reminder_time: getReminderTime(),
+        exportedAt: new Date().toISOString(),
+        version: APP.version
+      };
+      const payload = { settings, scans, logs };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ai-health-advisor-export-${todayStr()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    }
+
+    async function clearAllData() {
+      if (!confirm("Clear all data (history + logs + settings)? This cannot be undone.")) return;
+      try {
+        const db = await getDB();
+        await db.clear("scans");
+        await db.clear("logs");
+      } catch (_) {}
+      ["name","goal","allergies","age","gender","height_cm","weight_kg","activity","alerts_enabled","alerts_threshold","reminder_time","onboarded"].forEach(lsDel);
+      toast("All data cleared.", "success");
+      location.reload();
+    }
+
+    // ---------------------------
+    // Wire up events
+    // ---------------------------
+    function wireUI() {
+      $("#tabScan").addEventListener("click", () => showScreen("scan"));
+      $("#tabLog").addEventListener("click", async () => { await renderLogScreen(); showScreen("log"); });
+      $("#tabSettings").addEventListener("click", () => { syncSettingsUIFromStorage(); showScreen("settings"); });
+
+      $("#btnStartScan").addEventListener("click", startScanner);
+      $("#btnStopScan").addEventListener("click", () => { stopScanner(); setScanStatus("Scanner stopped.", false); });
+      $("#btnHistory").addEventListener("click", openHistory);
+      $("#btnSettingsFromScan").addEventListener("click", () => { syncSettingsUIFromStorage(); showScreen("settings"); });
+      $("#btnRefreshInsights").addEventListener("click", () => renderInsights());
+
+      $("#btnSaveSettings").addEventListener("click", saveSettingsFromUI);
+      $("#btnAskNotif").addEventListener("click", askNotificationPermission);
+      $("#btnExport").addEventListener("click", exportData);
+      $("#btnClearAll").addEventListener("click", clearAllData);
+      $("#st-alerts").addEventListener("click", () => {
+        const on = !getAlertsEnabled();
+        lsSet("alerts_enabled", on ? "1" : "0");
+        $("#st-alerts").classList.toggle("on", on);
+        toast(on ? "Alerts on." : "Alerts off.", "info");
+      });
+
+      // Onboarding
+      $("#ob-ask-notif").addEventListener("click", askNotificationPermission);
+      $("#ob-save").addEventListener("click", async () => {
+        const name = $("#ob-name").value.trim();
+        const goal = Number($("#ob-goal").value || 0);
+        const allergies = $("#ob-allergies").value.trim();
+        const msg = $("#ob-msg");
+
+        const age = Number($("#ob-age").value || 0);
+        const gender = String($("#ob-gender").value || "");
+        const heightCm = Number($("#ob-height").value || 0);
+        const weightKg = Number($("#ob-weight").value || 0);
+        const activity = Number($("#ob-activity").value || 0);
+
+        if (!age || age < 10 || age > 120) { msg.textContent = "Please enter your age."; return; }
+        if (!gender) { msg.textContent = "Please select a gender."; return; }
+        if (!heightCm || heightCm < 90 || heightCm > 230) { msg.textContent = "Please enter your height in cm."; return; }
+        if (!weightKg || weightKg < 25 || weightKg > 250) { msg.textContent = "Please enter your weight in kg."; return; }
+        if (!activity) { msg.textContent = "Please select an activity level."; return; }
+        if (!Number.isFinite(goal) || goal < 800) { msg.textContent = "We couldn't calculate your calorie goal yet. Check your details above."; return; }
+
+        lsSet("name", name);
+        lsSet("goal", String(goal));
+        lsSet("allergies", allergies);
+        lsSet("age", String(age));
+        lsSet("gender", gender);
+        lsSet("height_cm", String(heightCm));
+        lsSet("weight_kg", String(weightKg));
+        lsSet("activity", String(activity));
+        if (lsGet("alerts_threshold") == null) lsSet("alerts_threshold", "300");
+        if (lsGet("alerts_enabled") == null) lsSet("alerts_enabled", "1");
+        if (lsGet("reminder_time") == null) lsSet("reminder_time", "12:00");
+        lsSet("onboarded", "1");
+
+        await renderCaloriePill();
+        maybeScheduleReminder();
+        showScreen("scan");
+        toast("Setup complete.", "success");
+      });
+
+      // Onboarding calorie calculator
+      const obGoal = $("#ob-goal");
+      const obInputs = ["#ob-age","#ob-gender","#ob-height","#ob-weight","#ob-activity"].map($);
+      function calcSuggestedCalories(age, gender, heightCm, weightKg, activity) {
+        // Mifflin–St Jeor (maintenance / TDEE)
+        const s = gender === "male" ? 5 : -161;
+        const bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * age) + s;
+        const tdee = bmr * activity;
+        return Math.round(tdee / 10) * 10;
+      }
+      function updateSuggestedGoal() {
+        const age = Number($("#ob-age").value || 0);
+        const gender = String($("#ob-gender").value || "");
+        const heightCm = Number($("#ob-height").value || 0);
+        const weightKg = Number($("#ob-weight").value || 0);
+        const activity = Number($("#ob-activity").value || 0);
+        const valid = age && gender && heightCm && weightKg && activity;
+        if (!valid) return;
+        const suggested = calcSuggestedCalories(age, gender, heightCm, weightKg, activity);
+        if (!Number.isFinite(suggested) || suggested < 800) return;
+        if (obGoal.dataset.manual !== "1") obGoal.value = String(suggested);
+      }
+      obGoal.addEventListener("input", () => { obGoal.dataset.manual = "1"; });
+      obInputs.forEach(el => el.addEventListener("input", updateSuggestedGoal));
+      obInputs.forEach(el => el.addEventListener("change", updateSuggestedGoal));
+
+      window.addEventListener("online", setNetPill);
+      window.addEventListener("offline", setNetPill);
+    }
+
+    // ---------------------------
+    // Boot
+    // ---------------------------
+    (async function boot() {
+      setNetPill();
+      wireUI();
+      await registerServiceWorker();
+      await renderCaloriePill();
+
+      // Desktop camera note (but allow scanning if available).
+      if (!/android|iphone|ipad|ipod/i.test(navigator.userAgent)) {
+        toast("For best results, use this on your phone.", "info", 5200);
+      }
+
+      if (!isOnboarded()) {
+        showScreen("onboarding");
+      } else {
+        syncSettingsUIFromStorage();
+        showScreen("scan");
+        maybeScheduleReminder();
+      }
+
+      // Install prompt wiring (Android/Desktop)
+      window.addEventListener("beforeinstallprompt", (e) => {
+        e.preventDefault();
+        deferredInstallPrompt = e;
+        // Surface a simple hint; user can also install via browser UI.
+        toast("Install available: add to Home Screen for best experience.", "info", 6500);
+      });
+      window.addEventListener("appinstalled", () => {
+        deferredInstallPrompt = null;
+        toast("Installed.", "success");
+      });
+      maybeShowInstallHint();
+    })();
+  </script>
+</body>
+</html>
