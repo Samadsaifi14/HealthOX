@@ -1,0 +1,4 @@
+interface:
+  display_name: "Product App Research"
+  short_description: "Research product apps and build evidence-led features."
+  default_prompt: "Research this product app and its competitors, trace the user-facing features with evidence, and recommend or implement original improvements."
